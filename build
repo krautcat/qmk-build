@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+
+import argparse
+import configparser
+import functools
+import inspect
+import io
+import re
+import sys
+
+from abc import abstractmethod
+from pathlib import Path
+from shutil import copy as cp
+from typing import Tuple, Optional, Any, List, Dict, Callable
+
+
+class _Config:
+    def __init__(self, config_file: Path):
+        self._config = config = configparser.ConfigParser()
+        config.read(config_file)
+
+        self.user = config["qmk.gitignore"]["user"]
+
+
+class _TemplateHandler:
+    def __init__(self) -> None:
+        self._template_pattern = re.compile("{{(.*?)}}")
+
+    def is_string_templated(self, string: str) -> bool:
+        search_result = self._template_pattern.search(string)
+
+        if search_result is None:
+            return False
+        else:
+            return True
+
+    def replace_template(self, line: str, repl_fn: Callable[[re.Match], str]) -> str:
+        return self._template_pattern.sub(repl_fn, line)
+
+    def _remove_braces(self, string: str) -> str:
+        return re.sub(self._template_pattern, r"\1", string)
+
+    def gitignore(self, match_groups: re.Match, config: _Config) -> str:
+        templated_string = match_groups[0]
+        config_entry_name = self._remove_braces(templated_string)
+        
+        config_entry = getattr(config, config_entry_name, None)
+
+        if config_entry is None:
+            raise ValueError
+
+        return config_entry
+
+
+class _BaseCommand:
+    @abstractmethod
+    def __call__(self) -> None:
+        ...
+
+
+class _CommandInitWorkspace(_BaseCommand):
+    def __init__(self, config: _Config) -> None:
+        self._config = config
+        self._template_handler = _TemplateHandler()
+
+        self._script_dir = script_path().parent
+
+    def __call__(self, *args: Tuple[Any], **kwargs: Dict[str, Any]) -> None:
+        gitignore_entries = self._prepare_gitignore()
+        
+        qmk_root = self._script_dir.parent
+        qmk_gitignore_path = qmk_root / ".git" / "exclude"
+
+        qmk_gitignore_file = io.open(qmk_gitignore_path, mode="w")
+        qmk_gitignore_file.writelines(gitignore_entries)
+
+
+    def _prepare_gitignore(self):
+        gitignore_path = self._script_dir / "assets" / "qmk.gitignore"
+
+        gitignore_entries = io.open(gitignore_path).readlines()
+
+        for lineno, line in enumerate(gitignore_entries):
+            if line.startswith("#") or not self._template_handler.is_string_templated(line):
+                continue
+
+            repl_fn = functools.partial(self._template_handler.gitignore, config=self._config)
+            gitignore_entries[lineno] = self._template_handler.replace_template(line, repl_fn)
+
+        return gitignore_entries
+
+
+class _Argparser:
+    def __init__(self):
+        self._argparser = ap = argparse.ArgumentParser()
+
+        subp = ap.add_subparsers(title="Subcommands", dest="command")
+
+        subp.add_parser("init-workspace")
+
+    def parse(self, cli_args: Optional[List[str]]):
+        ns = self._argparser.parse_args(cli_args)
+
+        return ns
+
+
+def script_path() -> Path:
+    return Path(__file__).resolve()
+
+
+def command_name_to_class_name(cmd_name: str) -> str:
+    cmd_name_tokens = cmd_name.split("-")
+    
+    return "_Command{}".format("".join([t.capitalize() for t in cmd_name_tokens]))
+
+
+def get_command_class(cmd_name: str) -> _BaseCommand:
+    cmd_class = None
+
+    for name, obj in inspect.getmembers(sys.modules[__name__]):
+        if inspect.isclass(obj) and name == command_name_to_class_name(cmd_name):
+            return obj
+
+    return cmd_class
+
+
+def main(args: Optional[List[str]]) -> None:
+    cli_args = _Argparser().parse(args[1:])
+
+    config_path = script_path().parent / "config.ini"
+    config = _Config(config_path)
+
+    command_class = get_command_class(cli_args.command)
+    if command_class is None:
+        raise ValueError("Command '{}' is not implemented!".format(cli_args.command))
+
+    command_class(config)()
+
+
+if __name__ == "__main__":
+    main(sys.argv)
