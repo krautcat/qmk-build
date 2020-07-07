@@ -11,11 +11,11 @@ import sys
 from abc import abstractmethod
 from pathlib import Path
 from shutil import copy as cp
-from typing import Tuple, Optional, Any, List, Dict, Callable
+from typing import Tuple, Optional, Any, List, Dict, Callable, Match
 
 
 class _Config:
-    def __init__(self, config_file: Path):
+    def __init__(self, config_file: Path) -> None:
         self._config = config = configparser.ConfigParser()
         config.read(config_file)
 
@@ -34,13 +34,13 @@ class _TemplateHandler:
         else:
             return True
 
-    def replace_template(self, line: str, repl_fn: Callable[[re.Match], str]) -> str:
+    def replace_template(self, line: str, repl_fn: Callable[[Match], str]) -> str:
         return self._template_pattern.sub(repl_fn, line)
 
     def _remove_braces(self, string: str) -> str:
         return re.sub(self._template_pattern, r"\1", string)
 
-    def gitignore(self, match_groups: re.Match, config: _Config) -> str:
+    def gitignore(self, match_groups: Match, config: _Config) -> str:
         templated_string = match_groups[0]
         config_entry_name = self._remove_braces(templated_string)
         
@@ -69,7 +69,7 @@ class _CommandInitWorkspace(_BaseCommand):
         gitignore_entries = self._prepare_gitignore()
         
         qmk_root = self._script_dir.parent
-        qmk_gitignore_path = qmk_root / ".git" / "exclude"
+        qmk_gitignore_path = qmk_root / ".git" / "info" / "exclude"
 
         qmk_gitignore_file = io.open(qmk_gitignore_path, mode="w")
         qmk_gitignore_file.writelines(gitignore_entries)
