@@ -94,7 +94,12 @@ class _Argparser:
     def __init__(self):
         self._argparser = ap = argparse.ArgumentParser()
 
-        subp = ap.add_subparsers(title="Subcommands", dest="command")
+        # Add keyword argument 'required' if and only if Python version is more or equal 3.7.
+        kwargs = {}
+        if sys.version_info >= (3, 7):
+            kwargs["required"] = True
+
+        subp = ap.add_subparsers(title="Subcommands", dest="command", **kwargs)
 
         subp.add_parser("init-workspace")
 
@@ -114,8 +119,12 @@ def command_name_to_class_name(cmd_name: str) -> str:
     return "_Command{}".format("".join([t.capitalize() for t in cmd_name_tokens]))
 
 
-def get_command_class(cmd_name: str) -> _BaseCommand:
+def get_command_class(cmd_name: str) -> Optional[_BaseCommand]:
     cmd_class = None
+
+    if sys.version_info < (3, 7):
+        if cmd_name is None:
+            return cmd_class
 
     for name, obj in inspect.getmembers(sys.modules[__name__]):
         if inspect.isclass(obj) and name == command_name_to_class_name(cmd_name):
@@ -131,8 +140,14 @@ def main(args: Optional[List[str]]) -> None:
     config = _Config(config_path)
 
     command_class = get_command_class(cli_args.command)
+
     if command_class is None:
-        raise ValueError("Command '{}' is not implemented!".format(cli_args.command))
+        if cli_args.command is not None:
+            print("Command '{}' is not implemented!".format(cli_args.command))
+        else:
+            print("Subcommand is required!")
+
+        exit(1)
 
     command_class(config)()
 
