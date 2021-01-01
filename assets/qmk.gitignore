@@ -7,4 +7,4 @@
 .repo/
 build/
 vendor/
-**/keymaps/{{user}}
+**/keymaps/*{{user}}*
