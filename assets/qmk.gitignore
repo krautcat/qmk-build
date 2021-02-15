@@ -9,3 +9,6 @@ build/
 vendor/
 **/keymaps/*{{user}}*
 users/{{user}}
+
+# Pearl keyboard.
+keyboards/pearlboards
